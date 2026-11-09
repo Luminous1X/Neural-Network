@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fable's Neural Network</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series: #2a78d6;
+    --map-low: #fcfcfb;
+    --map-high: #0d366b;
+    --button: #f0efec;
+    --button-hover: #e1e0d9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #f0efec;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series: #3987e5;
+      --map-low: #1a1a19;
+      --map-high: #cde2fb;
+      --button: #2c2c2a;
+      --button-hover: #383835;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 16px 56px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; font-weight: 650; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0 0 4px; font-weight: 600; }
+  p { margin: 0; }
+  .lede { color: var(--ink-2); max-width: 62ch; }
+  .note { color: var(--ink-2); font-size: 14px; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 16px; margin-top: 28px; }
+  @media (max-width: 720px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  section.card { margin-top: 16px; }
+
+  #draw {
+    display: block;
+    width: 100%;
+    max-width: 280px;
+    aspect-ratio: 1;
+    margin: 12px auto 0;
+    background: var(--page);
+    border: 1px solid var(--axis);
+    border-radius: 8px;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .buttons { display: flex; gap: 8px; margin-top: 12px; justify-content: center; flex-wrap: wrap; }
+  button {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink);
+    background: var(--button);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  button:hover { background: var(--button-hover); }
+  button:focus-visible { outline: 2px solid var(--series); outline-offset: 2px; }
+
+  .verdict { display: flex; align-items: baseline; gap: 16px; margin: 8px 0 16px; min-height: 72px; }
+  #digit { font-size: 64px; line-height: 1; font-weight: 650; min-width: 0.7em; }
+  #confidence { color: var(--ink-2); }
+
+  /* Probability bars: one series, so no legend; the heading names it. */
+  .bars { list-style: none; margin: 0; padding: 0; }
+  .bars li { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; height: 26px; }
+  .bars .label { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: 14px; }
+  .bars li.top .label { color: var(--ink); font-weight: 650; }
+  .bars .plot { display: flex; align-items: center; height: 100%; border-left: 1px solid var(--axis); }
+  .bars .bar {
+    height: 14px;
+    width: 0;
+    background: var(--series);
+    border-radius: 0 4px 4px 0;
+    transition: width 90ms linear;
+  }
+  .bars .value {
+    margin-left: 6px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+    white-space: nowrap;
+    visibility: hidden;
+  }
+  .bars li.show .value, .bars li:hover .value { visibility: visible; }
+
+  .inside { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px 28px; margin-top: 16px; align-items: start; }
+  @media (max-width: 720px) { .inside { grid-template-columns: minmax(0, 1fr); } }
+  .inside h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .inside .note { margin-bottom: 10px; }
+  canvas.px { image-rendering: pixelated; display: block; border-radius: 3px; outline: 1px solid var(--border); }
+  #input { width: 112px; height: 112px; }
+  .maps { display: grid; gap: 6px; }
+  /* Capped so the maps wrap in even rows: 8 per row, then 16 per row. */
+  #maps1 { grid-template-columns: repeat(auto-fill, 48px); max-width: 426px; }
+  #maps1 canvas { width: 48px; height: 48px; }
+  #maps2 { grid-template-columns: repeat(auto-fill, 32px); max-width: 602px; }
+  #maps2 canvas { width: 32px; height: 32px; }
+  .layer + .layer { margin-top: 18px; }
+
+  footer { margin-top: 20px; color: var(--muted); font-size: 14px; }
+  #missing { margin-top: 24px; }
+  code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fable's Neural Network</h1>
+  <p class="lede">A convolutional network written from scratch in NumPy, with its own automatic
+    differentiation and no machine-learning library. It learned to read handwritten digits. Draw one.</p>
+
+  <div id="missing" class="card" hidden>
+    <h2>No trained weights yet</h2>
+    <p class="note">Run <code>python train.py</code> and then <code>python export_web.py</code>, and reload this page.</p>
+  </div>
+
+  <div id="app" hidden>
+    <div class="stage">
+      <div class="card">
+        <h2>Draw a digit</h2>
+        <p class="note">One digit, 0 to 9, anywhere in the box. Drawing replaces the test digit shown.</p>
+        <canvas id="draw" width="280" height="280" aria-label="Drawing area"></canvas>
+        <div class="buttons">
+          <button id="clear" type="button">Clear</button>
+          <button id="sample" type="button">Show a test digit</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>What the network thinks</h2>
+        <div class="verdict" aria-live="polite">
+          <div id="digit">&ndash;</div>
+          <div id="confidence">Waiting for a drawing</div>
+        </div>
+        <ol class="bars" id="bars" aria-label="Probability for each digit"></ol>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2>Inside the network</h2>
+      <p class="note">The same numbers the prediction is computed from. Stronger colour means a stronger response.</p>
+      <div class="inside">
+        <div>
+          <h3>Input</h3>
+          <p class="note">Your drawing, centred<br>and shrunk to 28 &times; 28.</p>
+          <canvas id="input" class="px" width="28" height="28"></canvas>
+        </div>
+        <div>
+          <div class="layer">
+            <h3 id="title1">First convolution</h3>
+            <p class="note">Each square is one learned 5 &times; 5 filter slid across the input. These pick out strokes and edges at different angles.</p>
+            <div class="maps" id="maps1"></div>
+          </div>
+          <div class="layer">
+            <h3 id="title2">Second convolution</h3>
+            <p class="note">Filters over the first layer's output. These respond to combinations of strokes: corners, loops, line endings.</p>
+            <div class="maps" id="maps2"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer id="stats"></footer>
+  </div>
+</main>
+
+<script src="weights.js"></script>
+<script src="model.js"></script>
+<script>
+(function () {
+  "use strict";
+  if (typeof FABLE_WEIGHTS === "undefined") {
+    document.getElementById("missing").hidden = false;
+    return;
+  }
+  document.getElementById("app").hidden = false;
+
+  const SIZE = 280;
+  const PEN = 22;
+  const model = FableModel.load(FABLE_WEIGHTS);
+  const samples = {
+    labels: FABLE_WEIGHTS.samples.labels,
+    pixels: FableModel.decodeBytes(FABLE_WEIGHTS.samples.pixels),
+  };
+
+  const draw = document.getElementById("draw");
+  const ctx = draw.getContext("2d", { willReadFrequently: true });
+  const digitEl = document.getElementById("digit");
+  const confidenceEl = document.getElementById("confidence");
+  const inputCanvas = document.getElementById("input");
+
+  // ----------------------------------------------------------------- theme
+  let colors = readColors();
+  function cssColor(name) {
+    const hex = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  }
+  function readColors() {
+    return { low: cssColor("--map-low"), high: cssColor("--map-high"), ink: cssColor("--ink") };
+  }
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    colors = readColors();
+    repaint();
+    update();
+  });
+
+  // ------------------------------------------------------------- bar chart
+  const rows = [];
+  const barsEl = document.getElementById("bars");
+  for (let d = 0; d < 10; d++) {
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="label"></span><span class="plot"><span class="bar"></span><span class="value"></span></span>';
+    li.querySelector(".label").textContent = d;
+    barsEl.appendChild(li);
+    rows.push({ li, bar: li.querySelector(".bar"), value: li.querySelector(".value") });
+  }
+
+  function percent(p) {
+    if (p >= 0.9995) return "100%";
+    if (p >= 0.1) return (p * 100).toFixed(0) + "%";
+    if (p >= 0.001) return (p * 100).toFixed(1) + "%";
+    return "<0.1%";
+  }
+
+  function showBars(probs, top) {
+    rows.forEach((row, d) => {
+      const p = probs ? probs[d] : 0;
+      // Leave room at the tip for the value label so it never gets clipped.
+      row.bar.style.width = "calc((100% - 52px) * " + p.toFixed(4) + ")";
+      row.value.textContent = probs ? percent(p) : "";
+      row.li.classList.toggle("top", probs !== null && d === top);
+      row.li.classList.toggle("show", probs !== null && (d === top || p >= 0.05));
+      row.li.setAttribute("aria-label", probs ? "Digit " + d + ": " + percent(p) : "Digit " + d);
+    });
+  }
+
+  // ---------------------------------------------------------- feature maps
+  function makeMaps(containerId, count, size) {
+    const container = document.getElementById(containerId);
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      const canvas = document.createElement("canvas");
+      canvas.className = "px";
+      canvas.width = canvas.height = size;
+      container.appendChild(canvas);
+      list.push(canvas);
+    }
+    return list;
+  }
+  const maps1 = makeMaps("maps1", model.c1, 24);
+  const maps2 = makeMaps("maps2", model.c2, 8);
+  document.getElementById("title1").textContent = "First convolution: " + model.c1 + " feature maps, 24 × 24";
+  document.getElementById("title2").textContent = "Second convolution: " + model.c2 + " feature maps, 8 × 8";
+
+  /* Paint one square of values starting at `offset`, scaled so `max` is full
+   * colour. `gamma` below 1 lifts weak responses so they stay visible. */
+  function paint(canvas, data, offset, max, gamma) {
+    const size = canvas.width;
+    const c = canvas.getContext("2d");
+    const image = c.createImageData(size, size);
+    const { low, high } = colors;
+    for (let i = 0; i < size * size; i++) {
+      const t = data && max > 0 ? Math.pow(Math.min(1, data[offset + i] / max), gamma || 1) : 0;
+      image.data[4 * i] = low[0] + (high[0] - low[0]) * t;
+      image.data[4 * i + 1] = low[1] + (high[1] - low[1]) * t;
+      image.data[4 * i + 2] = low[2] + (high[2] - low[2]) * t;
+      image.data[4 * i + 3] = 255;
+    }
+    c.putImageData(image, 0, 0);
+  }
+
+  function paintLayer(canvases, data, name) {
+    const size = canvases[0].width, area = size * size;
+    let max = 0;
+    if (data) for (let i = 0; i < data.length; i++) if (data[i] > max) max = data[i];
+    canvases.forEach((canvas, k) => {
+      paint(canvas, data, k * area, max, 0.5);
+      let peak = 0;
+      if (data) for (let i = 0; i < area; i++) peak = Math.max(peak, data[k * area + i]);
+      canvas.title = name + " " + (k + 1) + (data ? ": peak response " + peak.toFixed(2) : "");
+    });
+  }
+
+  // ------------------------------------------------------------- inference
+  function update() {
+    const pixels = ctx.getImageData(0, 0, SIZE, SIZE).data;
+    const ink = new Float32Array(SIZE * SIZE);
+    for (let i = 0; i < ink.length; i++) ink[i] = pixels[4 * i + 3] / 255;
+    const input = FableModel.preprocess(ink, SIZE, SIZE);
+
+    if (!input) {
+      digitEl.innerHTML = "&ndash;";
+      confidenceEl.textContent = "Waiting for a drawing";
+      showBars(null, -1);
+      paint(inputCanvas, null, 0, 1);
+      paintLayer(maps1, null, "Filter");
+      paintLayer(maps2, null, "Filter");
+      return;
+    }
+    const result = model.forward(input);
+    digitEl.textContent = result.digit;
+    confidenceEl.textContent = percent(result.probs[result.digit]) + " confident";
+    showBars(result.probs, result.digit);
+    paint(inputCanvas, input, 0, 1);
+    paintLayer(maps1, result.conv1, "Filter");
+    paintLayer(maps2, result.conv2, "Filter");
+  }
+
+  let queued = false;
+  function scheduleUpdate() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      update();
+    });
+  }
+
+  // --------------------------------------------------------------- drawing
+  let strokes = [];      // each stroke is a list of [x, y] in canvas pixels
+  let shownSample = -1;  // index of the test digit painted under the strokes, if any
+  let active = null;
+
+  function inkStyle() {
+    return "rgb(" + colors.ink.join(",") + ")";
+  }
+
+  function segment(from, to) {
+    ctx.strokeStyle = ctx.fillStyle = inkStyle();
+    ctx.lineWidth = PEN;
+    ctx.lineCap = ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.arc(to[0], to[1], PEN / 2, 0, 2 * Math.PI);
+    ctx.fill();
+    if (from) {
+      ctx.beginPath();
+      ctx.moveTo(from[0], from[1]);
+      ctx.lineTo(to[0], to[1]);
+      ctx.stroke();
+    }
+  }
+
+  function repaint() {
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    if (shownSample >= 0) {
+      ctx.fillStyle = inkStyle();
+      for (let i = 0; i < 784; i++) {
+        const v = samples.pixels[shownSample * 784 + i];
+        if (!v) continue;
+        ctx.globalAlpha = v / 255;
+        ctx.fillRect((i % 28) * 10, Math.floor(i / 28) * 10, 10, 10);
+      }
+      ctx.globalAlpha = 1;
+    }
+    for (const stroke of strokes) stroke.forEach((point, i) => segment(i ? stroke[i - 1] : null, point));
+  }
+
+  function position(event) {
+    const box = draw.getBoundingClientRect();
+    return [((event.clientX - box.left) * SIZE) / box.width, ((event.clientY - box.top) * SIZE) / box.height];
+  }
+
+  draw.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    event.preventDefault();
+    try { draw.setPointerCapture(event.pointerId); } catch (error) { /* capture is a nicety, not a requirement */ }
+    if (shownSample >= 0) {  // drawing replaces the test digit rather than scribbling over it
+      shownSample = -1;
+      repaint();
+    }
+    active = [position(event)];
+    strokes.push(active);
+    segment(null, active[0]);
+    scheduleUpdate();
+  });
+  draw.addEventListener("pointermove", (event) => {
+    if (!active) return;
+    const point = position(event);
+    segment(active[active.length - 1], point);
+    active.push(point);
+    scheduleUpdate();
+  });
+  const finish = () => { active = null; };
+  draw.addEventListener("pointerup", finish);
+  draw.addEventListener("pointercancel", finish);
+
+  document.getElementById("clear").addEventListener("click", () => {
+    strokes = [];
+    shownSample = -1;
+    repaint();
+    update();
+  });
+
+  function showSample() {
+    let next;
+    do next = Math.floor(Math.random() * samples.labels.length); while (next === shownSample);
+    strokes = [];
+    shownSample = next;
+    repaint();
+    update();
+  }
+  document.getElementById("sample").addEventListener("click", showSample);
+
+  // ----------------------------------------------------------------- stats
+  const meta = model.meta;
+  document.getElementById("stats").textContent =
+    (meta.test_accuracy * 100).toFixed(2) + "% accuracy on the 10,000 MNIST test digits · " +
+    meta.parameters.toLocaleString("en-US") + " parameters · " + meta.epochs + " training epochs. " +
+    "It was trained on MNIST, so it reads that style of handwriting best.";
+
+  showSample();  // open with a real test digit so the page is never blank
+})();
+</script>
+</body>
+</html>
