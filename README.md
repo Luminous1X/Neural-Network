@@ -9,6 +9,9 @@ data pipeline, and the training loop.
 Trained on MNIST handwritten digits, it reaches **99.55% test accuracy**
 (45 mistakes in 10,000 images) in about five minutes on a CPU.
 
+This was built because fable 5.2 just released, it served as a test to see how capable 5.2 was, in this case how quick it could build a network with MNIST.
+It finished the project in exactly 16 minutes and 34 seconds, not including things like the gh read me etc
+
 ## Try it
 
 Open `demo/index.html` in a browser and draw a digit. The page runs the trained
@@ -140,4 +143,6 @@ for _ in range(300):
     optimizer.step()
 
 print(model(x).data.argmax(axis=1))  # [0 1 1 0]
+
+
 ```
