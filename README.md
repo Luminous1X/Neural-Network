@@ -1,5 +1,7 @@
 # Fable's Neural Network
 
+[LICENSED UNDER POLYFORM NONCOMMERCIAL]
+
 A convolutional neural network built from scratch. The only dependency is NumPy,
 which supplies arrays and matrix multiplication. Everything that makes it a
 neural network is written here: the automatic differentiation engine, the
